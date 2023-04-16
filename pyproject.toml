@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vsgrlir"
+version = "1.0.0"
+description = "GRLIR function for VapourSynth"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "HolyWu", email = "holywu@gmail.com"}]
+keywords = ["GRLIR", "VapourSynth"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.10",
+  "Topic :: Multimedia :: Video"
+]
+dependencies = [
+  "numpy>=1.24.2",
+  "omegaconf>=2.3.0",
+  "requests>=2.28.2",
+  "timm>=0.6.13",
+  "torch>=1.13.1",
+  "tqdm>=4.65.0",
+  "VapourSynth>=55"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/HolyWu/vs-grlir"
+"Bug Tracker" = "https://github.com/HolyWu/vs-grlir/issues"
