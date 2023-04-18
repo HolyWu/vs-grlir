@@ -28,7 +28,8 @@ def grlir(
 ) -> vs.VideoNode:
     """Efficient and Explicit Modelling of Image Hierarchies for Image Restoration
 
-    :param clip:            Clip to process. Only RGBS format is supported.
+    :param clip:            Clip to process. Only RGBH and RGBS formats are supported.
+                            RGBH performs inference in FP16 mode while RGBS performs inference in FP32 mode.
     :param device_index:    Device ordinal of the GPU.
     :param num_streams:     Number of CUDA streams to enqueue the kernels.
     :param tile_w:          Tile width. As too large images result in the out of GPU memory issue, so this tile option
@@ -40,8 +41,8 @@ def grlir(
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error("grlir: this is not a clip")
 
-    if clip.format.id != vs.RGBS:
-        raise vs.Error("grlir: only RGBS format is supported")
+    if clip.format.id not in [vs.RGBH, vs.RGBS]:
+        raise vs.Error("grlir: only RGBH and RGBS formats are supported")
 
     if not torch.cuda.is_available():
         raise vs.Error("grlir: CUDA is not available")
@@ -56,6 +57,8 @@ def grlir(
         raise vs.Error("grlir: model files have not been downloaded. run 'python -m vsgrlir' first")
 
     torch.set_float32_matmul_precision("high")
+
+    fp16 = clip.format.bits_per_sample == 16
 
     device = torch.device("cuda", device_index)
 
@@ -86,6 +89,8 @@ def grlir(
 
     module.load_state_dict(state_dict)
     module.eval().to(device, memory_format=torch.channels_last)
+    if fp16:
+        module.half()
 
     index = -1
     index_lock = Lock()

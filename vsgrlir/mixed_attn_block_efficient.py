@@ -528,6 +528,7 @@ class EfficientMixAttnTransformerBlock(nn.Module):
             table_index_mask["mask_w2a"] = None
         return table_index_mask
 
+    @torch.cuda.amp.autocast()
     def forward(self, x, x_size, all_table_index_mask):
         # Mixed attention
         table_index_mask = self._get_table_index_mask(all_table_index_mask)

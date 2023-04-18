@@ -365,6 +365,88 @@ class GRL(nn.Module):
             for layer in self.layers:
                 layer._init_weights()
 
+    def _apply_half(self, fn):
+        self.conv_first.half()
+        self.norm_start.half()
+        self.pos_drop.half()
+        self.conv_after_body.half()
+
+        if self.upsampler == "pixelshuffle":
+            self.conv_before_upsample.half()
+            self.upsample.half()
+            self.conv_last.half()
+        elif self.upsampler == "pixelshuffledirect":
+            self.upsample.half()
+        elif self.upsampler == "nearest+conv":
+            self.conv_before_upsample.half()
+            self.conv_up1.half()
+            self.conv_up2.half()
+            self.conv_hr.half()
+            self.conv_last.half()
+            self.lrelu.half()
+        else:
+            self.conv_last.half()
+
+        def compute_should_use_set_data(tensor, tensor_applied):
+            if torch._has_compatible_shallow_copy_type(tensor, tensor_applied):
+                # If the new tensor has compatible tensor type as the existing tensor,
+                # the current behavior is to change the tensor in-place using `.data =`,
+                # and the future behavior is to overwrite the existing tensor. However,
+                # changing the current behavior is a BC-breaking change, and we want it
+                # to happen in future releases. So for now we introduce the
+                # `torch.__future__.get_overwrite_module_params_on_conversion()`
+                # global flag to let the user control whether they want the future
+                # behavior of overwriting the existing tensor or not.
+                return not torch.__future__.get_overwrite_module_params_on_conversion()
+            else:
+                return False
+
+        for key, param in self._parameters.items():
+            if param is None:
+                continue
+            # Tensors stored in modules are graph leaves, and we don't want to
+            # track autograd history of `param_applied`, so we have to use
+            # `with torch.no_grad():`
+            with torch.no_grad():
+                param_applied = fn(param)
+            should_use_set_data = compute_should_use_set_data(param, param_applied)
+            if should_use_set_data:
+                param.data = param_applied
+                out_param = param
+            else:
+                assert isinstance(param, nn.Parameter)
+                assert param.is_leaf
+                out_param = nn.Parameter(param_applied, param.requires_grad)
+                self._parameters[key] = out_param
+
+            if param.grad is not None:
+                with torch.no_grad():
+                    grad_applied = fn(param.grad)
+                should_use_set_data = compute_should_use_set_data(param.grad, grad_applied)
+                if should_use_set_data:
+                    assert out_param.grad is not None
+                    out_param.grad.data = grad_applied
+                else:
+                    assert param.grad.is_leaf
+                    out_param.grad = grad_applied.requires_grad_(param.grad.requires_grad)
+
+        for key, buf in self._buffers.items():
+            if buf is not None:
+                self._buffers[key] = fn(buf)
+
+        return self
+
+    def half(self):
+        r"""Casts all floating point parameters and buffers to ``half`` datatype.
+
+        .. note::
+            This method modifies the module in-place.
+
+        Returns:
+            Module: self
+        """
+        return self._apply_half(lambda t: t.half() if t.is_floating_point() else t)
+
     def set_table_index_mask(self, x_size):
         """
         Two used cases:
@@ -472,6 +554,7 @@ class GRL(nn.Module):
 
     def forward_features(self, x):
         x_size = (x.shape[2], x.shape[3])
+        x_dtype = x.dtype
         x = bchw_to_blc(x)
         x = self.norm_start(x)
         x = self.pos_drop(x)
@@ -481,6 +564,8 @@ class GRL(nn.Module):
             x = layer(x, x_size, table_index_mask)
 
         x = self.norm_end(x)  # B L C
+        if x_dtype == torch.half:
+            x = x.half()
         x = blc_to_bchw(x, x_size)
 
         return x
