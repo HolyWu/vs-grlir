@@ -192,8 +192,7 @@ class WindowAttentionWrapperV1(WindowAttentionV1):
         if self.input_resolution == x_size:
             attn_mask = self.attn_mask
         else:
-            attn_mask = calculate_mask(x_size, self.window_size, self.shift_size)
-            attn_mask = attn_mask.to(x.device)
+            attn_mask = calculate_mask(x_size, self.window_size, self.shift_size, device=x.device)
 
         # attention
         x = super(WindowAttentionWrapperV1, self).forward(x, mask=attn_mask)

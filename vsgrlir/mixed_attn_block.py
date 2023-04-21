@@ -96,10 +96,11 @@ class AffineTransformWindow(nn.Module):
                 self.window_size,
                 self.pretrained_window_size,
                 self.anchor_window_down_factor,
-            ).to(device)
+                device=device,
+            )
             index = get_relative_position_index_simple(
-                self.window_size, self.anchor_window_down_factor
-            ).to(device)
+                self.window_size, self.anchor_window_down_factor, device=device
+            )
 
         bias_table = self.cpb_mlp(table)  # 2*Wh-1, 2*Ww-1, num_heads
         bias_table = bias_table.view(-1, self.num_heads)
@@ -116,12 +117,10 @@ class AffineTransformWindow(nn.Module):
             mask = self.attn_mask
             # during test and window shift, recalculate the mask
             if self.input_resolution != x_size and self.shift_size > 0:
-                mask = calculate_mask(x_size, self.window_size, self.shift_size)
-                mask = mask.to(attn.device)
+                mask = calculate_mask(x_size, self.window_size, self.shift_size, device=attn.device)
         else:
             if self.shift_size > 0:
-                mask = calculate_mask(x_size, self.window_size, self.shift_size)
-                mask = mask.to(attn.device)
+                mask = calculate_mask(x_size, self.window_size, self.shift_size, device=attn.device)
             else:
                 mask = None
 
@@ -213,12 +212,11 @@ class AffineTransformStripe(nn.Module):
                 self.pretrained_stripe_size
             )  # or stripe_size; Needs further pondering
             table = get_relative_coords_table_all(
-                stripe_size, pretrained_stripe_size, self.anchor_window_down_factor
+                stripe_size, pretrained_stripe_size, self.anchor_window_down_factor, device=device
             )
-            table = table.to(device)
             index = get_relative_position_index_simple(
-                stripe_size, self.anchor_window_down_factor, self.window_to_anchor
-            ).to(device)
+                stripe_size, self.anchor_window_down_factor, self.window_to_anchor, device=device
+            )
         else:
             table = self.relative_coords_table
             index = self.relative_position_index
@@ -248,8 +246,8 @@ class AffineTransformStripe(nn.Module):
                     shift_size,
                     self.anchor_window_down_factor,
                     self.window_to_anchor,
+                    device=device,
                 )
-                mask = mask.to(device)
         else:
             if self.stripe_shift > 0:
                 mask = calculate_mask_all(
@@ -258,8 +256,8 @@ class AffineTransformStripe(nn.Module):
                     shift_size,
                     self.anchor_window_down_factor,
                     self.window_to_anchor,
+                    device=attn.device,
                 )
-                mask = mask.to(attn.device)
             else:
                 mask = None
 

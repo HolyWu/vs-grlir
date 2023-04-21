@@ -447,7 +447,7 @@ class GRL(nn.Module):
         """
         return self._apply_half(lambda t: t.half() if t.is_floating_point() else t)
 
-    def set_table_index_mask(self, x_size):
+    def set_table_index_mask(self, x_size, device=None):
         """
         Two used cases:
         1) At initialization: set the shared buffers.
@@ -458,24 +458,24 @@ class GRL(nn.Module):
         df = self.anchor_window_down_factor
 
         table_w = get_relative_coords_table_all(
-            self.window_size, self.pretrained_window_size
+            self.window_size, self.pretrained_window_size, device=device
         )
-        table_sh = get_relative_coords_table_all(ss, self.pretrained_stripe_size, df)
+        table_sh = get_relative_coords_table_all(ss, self.pretrained_stripe_size, df, device=device)
         table_sv = get_relative_coords_table_all(
-            ss[::-1], self.pretrained_stripe_size, df
+            ss[::-1], self.pretrained_stripe_size, df, device=device
         )
 
-        index_w = get_relative_position_index_simple(self.window_size)
-        index_sh_a2w = get_relative_position_index_simple(ss, df, False)
-        index_sh_w2a = get_relative_position_index_simple(ss, df, True)
-        index_sv_a2w = get_relative_position_index_simple(ss[::-1], df, False)
-        index_sv_w2a = get_relative_position_index_simple(ss[::-1], df, True)
+        index_w = get_relative_position_index_simple(self.window_size, device=device)
+        index_sh_a2w = get_relative_position_index_simple(ss, df, False, device=device)
+        index_sh_w2a = get_relative_position_index_simple(ss, df, True, device=device)
+        index_sv_a2w = get_relative_position_index_simple(ss[::-1], df, False, device=device)
+        index_sv_w2a = get_relative_position_index_simple(ss[::-1], df, True, device=device)
 
-        mask_w = calculate_mask(x_size, self.window_size, self.shift_size)
-        mask_sh_a2w = calculate_mask_all(x_size, ss, sss, df, False)
-        mask_sh_w2a = calculate_mask_all(x_size, ss, sss, df, True)
-        mask_sv_a2w = calculate_mask_all(x_size, ss[::-1], sss[::-1], df, False)
-        mask_sv_w2a = calculate_mask_all(x_size, ss[::-1], sss[::-1], df, True)
+        mask_w = calculate_mask(x_size, self.window_size, self.shift_size, device=device)
+        mask_sh_a2w = calculate_mask_all(x_size, ss, sss, df, False, device=device)
+        mask_sh_w2a = calculate_mask_all(x_size, ss, sss, df, True, device=device)
+        mask_sv_a2w = calculate_mask_all(x_size, ss[::-1], sss[::-1], df, False, device=device)
+        mask_sv_w2a = calculate_mask_all(x_size, ss[::-1], sss[::-1], df, True, device=device)
         return {
             "table_w": table_w,
             "table_sh": table_sh,
@@ -511,9 +511,7 @@ class GRL(nn.Module):
                 "mask_sv_w2a": self.mask_sv_w2a,
             }
         else:
-            table_index_mask = self.set_table_index_mask(input_resolution)
-            for k, v in table_index_mask.items():
-                table_index_mask[k] = v.to(device)
+            table_index_mask = self.set_table_index_mask(input_resolution, device=device)
             return table_index_mask
 
     def _init_weights(self, m):

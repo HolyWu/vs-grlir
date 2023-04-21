@@ -73,11 +73,11 @@ def window_reverse(windows, window_size: Tuple[int, int], img_size: Tuple[int, i
     return x
 
 
-def _fill_window(input_resolution, window_size, shift_size=None):
+def _fill_window(input_resolution, window_size, shift_size=None, device=None):
     if shift_size is None:
         shift_size = [s // 2 for s in window_size]
 
-    img_mask = torch.zeros((1, *input_resolution, 1))  # 1 H W 1
+    img_mask = torch.zeros((1, *input_resolution, 1), device=device)  # 1 H W 1
     h_slices = (
         slice(0, -window_size[0]),
         slice(-window_size[0], -shift_size[0]),
@@ -109,14 +109,14 @@ def _fill_window(input_resolution, window_size, shift_size=None):
 #####################################
 
 
-def calculate_mask(input_resolution, window_size, shift_size):
+def calculate_mask(input_resolution, window_size, shift_size, device=None):
     """
     Use case: 1)
     """
     # calculate attention mask for SW-MSA
     if isinstance(shift_size, int):
         shift_size = to_2tuple(shift_size)
-    mask_windows = _fill_window(input_resolution, window_size, shift_size)
+    mask_windows = _fill_window(input_resolution, window_size, shift_size, device=device)
 
     attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
     attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
@@ -132,6 +132,7 @@ def calculate_mask_all(
     shift_size,
     anchor_window_down_factor=1,
     window_to_anchor=True,
+    device=None,
 ):
     """
     Use case: 3)
@@ -142,9 +143,9 @@ def calculate_mask_all(
     anchor_shift = [s // anchor_window_down_factor for s in shift_size]
 
     # mask of window1: nW, Wh**Ww
-    mask_windows = _fill_window(input_resolution, window_size, shift_size)
+    mask_windows = _fill_window(input_resolution, window_size, shift_size, device=device)
     # mask of window2: nW, AWh*AWw
-    mask_anchor = _fill_window(anchor_resolution, aws, anchor_shift)
+    mask_anchor = _fill_window(anchor_resolution, aws, anchor_shift, device=device)
 
     if window_to_anchor:
         attn_mask = mask_windows.unsqueeze(2) - mask_anchor.unsqueeze(1)
@@ -178,9 +179,9 @@ def calculate_win_mask(
     return attn_mask
 
 
-def _get_meshgrid_coords(start_coords, end_coords):
-    coord_h = torch.arange(start_coords[0], end_coords[0])
-    coord_w = torch.arange(start_coords[1], end_coords[1])
+def _get_meshgrid_coords(start_coords, end_coords, device=None):
+    coord_h = torch.arange(start_coords[0], end_coords[0], device=device)
+    coord_w = torch.arange(start_coords[1], end_coords[1], device=device)
     coords = torch.stack(torch.meshgrid([coord_h, coord_w], indexing="ij"))  # 2, Wh, Ww
     coords = torch.flatten(coords, 1)  # 2, Wh*Ww
     return coords
@@ -223,7 +224,7 @@ def get_relative_coords_table(
 
 
 def get_relative_coords_table_all(
-    window_size, pretrained_window_size=[0, 0], anchor_window_down_factor=1
+    window_size, pretrained_window_size=[0, 0], anchor_window_down_factor=1, device=None
 ):
     """
     Use case: 3)
@@ -253,8 +254,8 @@ def get_relative_coords_table_all(
     # TODO: Investigate whether it is really important to use this setting when finetuning large window size
     # TODO: based on pretrained weights with small window size.
 
-    coord_h = torch.arange(ts_n[0], ts_p[0] + 1, dtype=torch.float32)
-    coord_w = torch.arange(ts_n[1], ts_p[1] + 1, dtype=torch.float32)
+    coord_h = torch.arange(ts_n[0], ts_p[0] + 1, dtype=torch.float32, device=device)
+    coord_w = torch.arange(ts_n[1], ts_p[1] + 1, dtype=torch.float32, device=device)
     table = torch.stack(torch.meshgrid([coord_h, coord_w], indexing="ij")).permute(
         1, 2, 0
     )
@@ -350,7 +351,7 @@ def get_relative_position_index_all(
 
 
 def get_relative_position_index_simple(
-    window_size, anchor_window_down_factor=1, window_to_anchor=True
+    window_size, anchor_window_down_factor=1, window_to_anchor=True, device=None
 ):
     """
     Use case: 3)
@@ -361,8 +362,8 @@ def get_relative_position_index_simple(
     ws = window_size
     aws = [w // anchor_window_down_factor for w in window_size]
 
-    coords = _get_meshgrid_coords((0, 0), window_size)  # 2, Wh*Ww
-    coords_anchor = _get_meshgrid_coords((0, 0), aws)
+    coords = _get_meshgrid_coords((0, 0), window_size, device=device)  # 2, Wh*Ww
+    coords_anchor = _get_meshgrid_coords((0, 0), aws, device=device)
     # 2, AWh*AWw
 
     max_horizontal_diff = aws[1] + ws[1] - 1
