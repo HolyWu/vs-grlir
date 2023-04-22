@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import dataclass
 from threading import Lock
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import vapoursynth as vs
 from vsutil import fallback
 
@@ -18,11 +20,24 @@ os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 model_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "models")
 
 
+class Backend:
+    @dataclass
+    class Eager:
+        module: torch.nn.Module
+
+    @dataclass
+    class CUDAGraphs:
+        graph: list[torch.cuda.CUDAGraph]
+        static_input: list[torch.Tensor]
+        static_output: list[torch.Tensor]
+
+
 @torch.inference_mode()
 def grlir(
     clip: vs.VideoNode,
     device_index: int | None = None,
     num_streams: int = 1,
+    cuda_graphs: bool = False,
     model: int = 0,
     tile_w: int = 0,
     tile_h: int = 0,
@@ -34,6 +49,7 @@ def grlir(
                             RGBH performs inference in FP16 mode while RGBS performs inference in FP32 mode.
     :param device_index:    Device ordinal of the GPU.
     :param num_streams:     Number of CUDA streams to enqueue the kernels.
+    :param cuda_graphs:     Use CUDA Graphs to remove CPU overhead associated with launching CUDA kernels sequentially.
     :param model:           Model to use.
                              0 = Blind Image SR
                              1 = Defocus Deblurring
@@ -81,6 +97,7 @@ def grlir(
     torch.set_float32_matmul_precision("high")
 
     fp16 = clip.format.bits_per_sample == 16
+    dtype = torch.half if fp16 else torch.float
 
     device = torch.device("cuda", device_index)
 
@@ -109,6 +126,7 @@ def grlir(
             )
             scale = 4
             tile_pad = fallback(tile_pad, 16)
+            pad_size = 64
         case 1:
             model_name = "db_defocus_single_pixel_grl_base.ckpt"
             module = GRL(
@@ -127,6 +145,7 @@ def grlir(
                 local_connection=True,
             )
             tile_pad = fallback(tile_pad, 16)
+            pad_size = 96
         case 2:
             model_name = "db_motion_grl_base_gopro.ckpt"
             module = GRL(
@@ -145,6 +164,7 @@ def grlir(
                 local_connection=True,
             )
             tile_pad = fallback(tile_pad, 12)
+            pad_size = 96
         case 3:
             model_name = "db_motion_grl_base_realblur_j.ckpt"
             module = GRL(
@@ -163,6 +183,7 @@ def grlir(
                 local_connection=True,
             )
             tile_pad = fallback(tile_pad, 12)
+            pad_size = 96
         case 4:
             model_name = "db_motion_grl_base_realblur_r.ckpt"
             module = GRL(
@@ -181,6 +202,7 @@ def grlir(
                 local_connection=True,
             )
             tile_pad = fallback(tile_pad, 12)
+            pad_size = 96
         case 5:
             model_name = "dm_grl_small.ckpt"
             module = GRL(
@@ -199,6 +221,7 @@ def grlir(
                 local_connection=False,
             )
             tile_pad = fallback(tile_pad, 8)
+            pad_size = 32
         case 6:
             model_name = "dn_grl_small_c3s15.ckpt"
             module = GRL(
@@ -217,6 +240,7 @@ def grlir(
                 local_connection=False,
             )
             tile_pad = fallback(tile_pad, 16)
+            pad_size = 128
         case 7:
             model_name = "dn_grl_small_c3s25.ckpt"
             module = GRL(
@@ -235,6 +259,7 @@ def grlir(
                 local_connection=False,
             )
             tile_pad = fallback(tile_pad, 16)
+            pad_size = 128
         case 8:
             model_name = "dn_grl_small_c3s50.ckpt"
             module = GRL(
@@ -253,6 +278,7 @@ def grlir(
                 local_connection=False,
             )
             tile_pad = fallback(tile_pad, 16)
+            pad_size = 128
         case 9:
             model_name = "jpeg_grl_small_c3q10.ckpt"
             module = GRL(
@@ -271,6 +297,7 @@ def grlir(
                 local_connection=False,
             )
             tile_pad = fallback(tile_pad, 36)
+            pad_size = 144
         case 10:
             model_name = "jpeg_grl_small_c3q20.ckpt"
             module = GRL(
@@ -289,6 +316,7 @@ def grlir(
                 local_connection=False,
             )
             tile_pad = fallback(tile_pad, 36)
+            pad_size = 144
         case 11:
             model_name = "jpeg_grl_small_c3q30.ckpt"
             module = GRL(
@@ -307,6 +335,7 @@ def grlir(
                 local_connection=False,
             )
             tile_pad = fallback(tile_pad, 36)
+            pad_size = 144
         case 12:
             model_name = "jpeg_grl_small_c3q40.ckpt"
             module = GRL(
@@ -325,6 +354,7 @@ def grlir(
                 local_connection=False,
             )
             tile_pad = fallback(tile_pad, 36)
+            pad_size = 144
         case 13:
             model_name = "sr_grl_small_c3x2.ckpt"
             module = GRL(
@@ -344,6 +374,7 @@ def grlir(
             )
             scale = 2
             tile_pad = fallback(tile_pad, 32)
+            pad_size = 64
         case 14:
             model_name = "sr_grl_small_c3x3.ckpt"
             module = GRL(
@@ -363,6 +394,7 @@ def grlir(
             )
             scale = 3
             tile_pad = fallback(tile_pad, 32)
+            pad_size = 64
         case 15:
             model_name = "sr_grl_small_c3x4.ckpt"
             module = GRL(
@@ -382,6 +414,7 @@ def grlir(
             )
             scale = 4
             tile_pad = fallback(tile_pad, 32)
+            pad_size = 64
 
     model_path = os.path.join(model_dir, model_name)
 
@@ -397,6 +430,38 @@ def grlir(
     if fp16:
         module.half()
 
+    if tile_w > 0 and tile_h > 0:
+        pad_w = math.ceil(min(tile_w + 2 * tile_pad, clip.width) / pad_size) * pad_size
+        pad_h = math.ceil(min(tile_h + 2 * tile_pad, clip.height) / pad_size) * pad_size
+    else:
+        pad_w = math.ceil(clip.width / pad_size) * pad_size
+        pad_h = math.ceil(clip.height / pad_size) * pad_size
+
+    if cuda_graphs:
+        graph: list[torch.cuda.CUDAGraph] = []
+        static_input: list[torch.Tensor] = []
+        static_output: list[torch.Tensor] = []
+
+        for i in range(num_streams):
+            static_input.append(
+                torch.zeros((1, 3, pad_h, pad_w), dtype=dtype, device=device).to(memory_format=torch.channels_last)
+            )
+
+            torch.cuda.synchronize(device=device)
+            stream[i].wait_stream(torch.cuda.current_stream(device=device))
+            with torch.cuda.stream(stream[i]):
+                module(static_input[i])
+            torch.cuda.current_stream(device=device).wait_stream(stream[i])
+            torch.cuda.synchronize(device=device)
+
+            graph.append(torch.cuda.CUDAGraph())
+            with torch.cuda.graph(graph[i], stream=stream[i]):
+                static_output.append(module(static_input[i]))
+
+        backend = Backend.CUDAGraphs(graph, static_input, static_output)
+    else:
+        backend = Backend.Eager(module)
+
     index = -1
     index_lock = Lock()
 
@@ -411,9 +476,19 @@ def grlir(
             img = frame_to_tensor(f[0], device)
 
             if tile_w > 0 and tile_h > 0:
-                output = tile_process(img, scale, tile_w, tile_h, tile_pad, module)
+                output = tile_process(img, scale, tile_w, tile_h, tile_pad, pad_w, pad_h, backend, local_index)
             else:
-                output = module(img)
+                h, w = img.shape[2:]
+                img = F.pad(img, (0, pad_w - w, 0, pad_h - h), "reflect")
+
+                if cuda_graphs:
+                    static_input[local_index].copy_(img)
+                    graph[local_index].replay()
+                    output = static_output[local_index]
+                else:
+                    output = module(img)
+
+                output = output[:, :, : h * scale, : w * scale]
 
             return tensor_to_frame(output, f[1].copy())
 
@@ -436,7 +511,15 @@ def tensor_to_frame(tensor: torch.Tensor, frame: vs.VideoFrame) -> vs.VideoFrame
 
 
 def tile_process(
-    img: torch.Tensor, scale: int, tile_w: int, tile_h: int, tile_pad: int, module: torch.nn.Module
+    img: torch.Tensor,
+    scale: int,
+    tile_w: int,
+    tile_h: int,
+    tile_pad: int,
+    pad_w: int,
+    pad_h: int,
+    backend: Backend.Eager | Backend.CUDAGraphs,
+    index: int,
 ) -> torch.Tensor:
     batch, channel, height, width = img.shape
     output_shape = (batch, channel, height * scale, width * scale)
@@ -472,8 +555,19 @@ def tile_process(
 
             input_tile = img[:, :, input_start_y_pad:input_end_y_pad, input_start_x_pad:input_end_x_pad]
 
+            h, w = input_tile.shape[2:]
+            mode = "reflect" if pad_w - w < w and pad_h - h < h else "replicate"
+            input_tile = F.pad(input_tile, (0, pad_w - w, 0, pad_h - h), mode)
+
             # process tile
-            output_tile = module(input_tile)
+            if isinstance(backend, Backend.CUDAGraphs):
+                backend.static_input[index].copy_(input_tile)
+                backend.graph[index].replay()
+                output_tile = backend.static_output[index]
+            else:
+                output_tile = backend.module(input_tile)
+
+            output_tile = output_tile[:, :, : h * scale, : w * scale]
 
             # output tile area on total image
             output_start_x = input_start_x * scale

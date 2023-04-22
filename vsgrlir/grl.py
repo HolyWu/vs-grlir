@@ -569,9 +569,6 @@ class GRL(nn.Module):
         return x
 
     def forward(self, x):
-        H, W = x.shape[2:]
-        x = self.check_image_size(x)
-
         x = (x - self.mean) * self.img_range
 
         if self.upsampler == "pixelshuffle":
@@ -612,7 +609,7 @@ class GRL(nn.Module):
 
         x = x / self.img_range + self.mean
 
-        return x[:, :, : H * self.upscale, : W * self.upscale]
+        return x
 
     def flops(self):
         pass
