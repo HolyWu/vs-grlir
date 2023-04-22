@@ -84,6 +84,7 @@ class TransformerStage(nn.Module):
         pretrained_stripe_size=[0, 0],
         conv_type="1conv",
         init_method="",
+        fp16=False,
         args=None,
     ):
         super().__init__()
@@ -118,11 +119,75 @@ class TransformerStage(nn.Module):
                 pretrained_window_size=pretrained_window_size,
                 pretrained_stripe_size=pretrained_stripe_size,
                 res_scale=0.1 if init_method == "r" else 1.0,
+                fp16=fp16,
                 args=args,
             )
             self.blocks.append(block)
 
         self.conv = build_last_conv(conv_type, dim)
+
+    def _apply_half(self, fn):
+        self.blocks.half()
+
+        def compute_should_use_set_data(tensor, tensor_applied):
+            if torch._has_compatible_shallow_copy_type(tensor, tensor_applied):
+                # If the new tensor has compatible tensor type as the existing tensor,
+                # the current behavior is to change the tensor in-place using `.data =`,
+                # and the future behavior is to overwrite the existing tensor. However,
+                # changing the current behavior is a BC-breaking change, and we want it
+                # to happen in future releases. So for now we introduce the
+                # `torch.__future__.get_overwrite_module_params_on_conversion()`
+                # global flag to let the user control whether they want the future
+                # behavior of overwriting the existing tensor or not.
+                return not torch.__future__.get_overwrite_module_params_on_conversion()
+            else:
+                return False
+
+        for key, param in self._parameters.items():
+            if param is None:
+                continue
+            # Tensors stored in modules are graph leaves, and we don't want to
+            # track autograd history of `param_applied`, so we have to use
+            # `with torch.no_grad():`
+            with torch.no_grad():
+                param_applied = fn(param)
+            should_use_set_data = compute_should_use_set_data(param, param_applied)
+            if should_use_set_data:
+                param.data = param_applied
+                out_param = param
+            else:
+                assert isinstance(param, nn.Parameter)
+                assert param.is_leaf
+                out_param = nn.Parameter(param_applied, param.requires_grad)
+                self._parameters[key] = out_param
+
+            if param.grad is not None:
+                with torch.no_grad():
+                    grad_applied = fn(param.grad)
+                should_use_set_data = compute_should_use_set_data(param.grad, grad_applied)
+                if should_use_set_data:
+                    assert out_param.grad is not None
+                    out_param.grad.data = grad_applied
+                else:
+                    assert param.grad.is_leaf
+                    out_param.grad = grad_applied.requires_grad_(param.grad.requires_grad)
+
+        for key, buf in self._buffers.items():
+            if buf is not None:
+                self._buffers[key] = fn(buf)
+
+        return self
+
+    def half(self):
+        r"""Casts all floating point parameters and buffers to ``half`` datatype.
+
+        .. note::
+            This method modifies the module in-place.
+
+        Returns:
+            Module: self
+        """
+        return self._apply_half(lambda t: t.half() if t.is_floating_point() else t)
 
     def _init_weights(self):
         for n, m in self.named_modules():
@@ -236,6 +301,7 @@ class GRL(nn.Module):
         conv_type="1conv",
         init_method="n",  # initialization method of the weight parameters used to train large scale models.
         euclidean_dist=False,
+        fp16=False,
         **kwargs,
     ):
         super(GRL, self).__init__()
@@ -272,6 +338,7 @@ class GRL(nn.Module):
         self.pretrained_window_size = pretrained_window_size
         self.pretrained_stripe_size = pretrained_stripe_size
         self.anchor_window_down_factor = anchor_window_down_factor
+        self.fp16 = fp16
 
         # Head of the network. First convolution.
         self.conv_first = nn.Conv2d(in_channels, embed_dim, 3, 1, 1)
@@ -321,6 +388,7 @@ class GRL(nn.Module):
                 pretrained_stripe_size=pretrained_stripe_size,
                 conv_type=conv_type,
                 init_method=init_method,
+                fp16=fp16,
                 args=args,
             )
             self.layers.append(layer)
@@ -369,6 +437,8 @@ class GRL(nn.Module):
         self.conv_first.half()
         self.norm_start.half()
         self.pos_drop.half()
+        for layer in self.layers:
+            layer.half()
         self.conv_after_body.half()
 
         if self.upsampler == "pixelshuffle":
@@ -512,6 +582,10 @@ class GRL(nn.Module):
             }
         else:
             table_index_mask = self.set_table_index_mask(input_resolution, device=device)
+            if self.fp16:
+                for k, v in table_index_mask.items():
+                    if v.is_floating_point():
+                        table_index_mask[k] = v.half()
             return table_index_mask
 
     def _init_weights(self, m):
@@ -552,17 +626,17 @@ class GRL(nn.Module):
 
     def forward_features(self, x):
         x_size = (x.shape[2], x.shape[3])
-        x_dtype = x.dtype
         x = bchw_to_blc(x)
         x = self.norm_start(x)
         x = self.pos_drop(x)
 
         table_index_mask = self.get_table_index_mask(x.device, x_size)
+        x = x.float()
         for layer in self.layers:
             x = layer(x, x_size, table_index_mask)
 
         x = self.norm_end(x)  # B L C
-        if x_dtype == torch.half:
+        if self.fp16:
             x = x.half()
         x = blc_to_bchw(x, x_size)
 

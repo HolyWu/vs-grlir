@@ -443,6 +443,7 @@ class EfficientMixAttnTransformerBlock(nn.Module):
         pretrained_window_size=[0, 0],
         pretrained_stripe_size=[0, 0],
         res_scale=1.0,
+        fp16=False,
         args=None,
     ):
         super().__init__()
@@ -463,6 +464,7 @@ class EfficientMixAttnTransformerBlock(nn.Module):
             self.stripe_groups = stripe_groups
         self.mlp_ratio = mlp_ratio
         self.res_scale = res_scale
+        self.fp16 = fp16
 
         self.attn = MixedAttention(
             dim,
@@ -528,7 +530,6 @@ class EfficientMixAttnTransformerBlock(nn.Module):
             table_index_mask["mask_w2a"] = None
         return table_index_mask
 
-    @torch.cuda.amp.autocast()
     def forward(self, x, x_size, all_table_index_mask):
         # Mixed attention
         table_index_mask = self._get_table_index_mask(all_table_index_mask)
@@ -536,15 +537,15 @@ class EfficientMixAttnTransformerBlock(nn.Module):
             x = (
                 x
                 + self.res_scale
-                * self.drop_path(self.norm1(self.attn(x, x_size, table_index_mask)))
-                + self.conv(x, x_size)
+                * self.drop_path(self.norm1(self.attn(x.half() if self.fp16 else x, x_size, table_index_mask)))
+                + self.conv(x.half() if self.fp16 else x, x_size)
             )
         else:
             x = x + self.res_scale * self.drop_path(
-                self.norm1(self.attn(x, x_size, table_index_mask))
+                self.norm1(self.attn(x.half() if self.fp16 else x, x_size, table_index_mask))
             )
         # FFN
-        x = x + self.res_scale * self.drop_path(self.norm2(self.mlp(x)))
+        x = x + self.res_scale * self.drop_path(self.norm2(self.mlp(x.half() if self.fp16 else x)))
 
         return x
 

@@ -123,6 +123,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=True,
+                fp16=fp16,
             )
             scale = 4
             tile_pad = fallback(tile_pad, 16)
@@ -143,6 +144,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=True,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 16)
             pad_size = 96
@@ -162,6 +164,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=True,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 12)
             pad_size = 96
@@ -181,6 +184,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=True,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 12)
             pad_size = 96
@@ -200,6 +204,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=True,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 12)
             pad_size = 96
@@ -219,6 +224,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 8)
             pad_size = 32
@@ -238,6 +244,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 16)
             pad_size = 128
@@ -257,6 +264,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 16)
             pad_size = 128
@@ -276,6 +284,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 16)
             pad_size = 128
@@ -295,6 +304,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 36)
             pad_size = 144
@@ -314,6 +324,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 36)
             pad_size = 144
@@ -333,6 +344,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 36)
             pad_size = 144
@@ -352,6 +364,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             tile_pad = fallback(tile_pad, 36)
             pad_size = 144
@@ -371,6 +384,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             scale = 2
             tile_pad = fallback(tile_pad, 32)
@@ -391,6 +405,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             scale = 3
             tile_pad = fallback(tile_pad, 32)
@@ -411,6 +426,7 @@ def grlir(
                 mlp_ratio=2,
                 anchor_window_down_factor=4,
                 local_connection=False,
+                fp16=fp16,
             )
             scale = 4
             tile_pad = fallback(tile_pad, 32)
