@@ -24,7 +24,8 @@ dependencies = [
   "timm>=0.6.13",
   "torch>=1.13.1",
   "tqdm>=4.65.0",
-  "VapourSynth>=55"
+  "VapourSynth>=55",
+  "vsutil>=0.8.0"
 ]
 
 [project.urls]

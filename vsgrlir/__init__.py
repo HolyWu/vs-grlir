@@ -7,6 +7,7 @@ from threading import Lock
 import numpy as np
 import torch
 import vapoursynth as vs
+from vsutil import fallback
 
 from .grl import GRL
 
@@ -25,7 +26,7 @@ def grlir(
     model: int = 0,
     tile_w: int = 0,
     tile_h: int = 0,
-    tile_pad: int = 16,
+    tile_pad: int | None = None,
 ) -> vs.VideoNode:
     """Efficient and Explicit Modelling of Image Hierarchies for Image Restoration
 
@@ -107,6 +108,7 @@ def grlir(
                 local_connection=True,
             )
             scale = 4
+            tile_pad = fallback(tile_pad, 16)
         case 1:
             model_name = "db_defocus_single_pixel_grl_base.ckpt"
             module = GRL(
@@ -124,6 +126,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=True,
             )
+            tile_pad = fallback(tile_pad, 16)
         case 2:
             model_name = "db_motion_grl_base_gopro.ckpt"
             module = GRL(
@@ -141,6 +144,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=True,
             )
+            tile_pad = fallback(tile_pad, 12)
         case 3:
             model_name = "db_motion_grl_base_realblur_j.ckpt"
             module = GRL(
@@ -158,6 +162,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=True,
             )
+            tile_pad = fallback(tile_pad, 12)
         case 4:
             model_name = "db_motion_grl_base_realblur_r.ckpt"
             module = GRL(
@@ -175,6 +180,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=True,
             )
+            tile_pad = fallback(tile_pad, 12)
         case 5:
             model_name = "dm_grl_small.ckpt"
             module = GRL(
@@ -192,6 +198,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=False,
             )
+            tile_pad = fallback(tile_pad, 8)
         case 6:
             model_name = "dn_grl_small_c3s15.ckpt"
             module = GRL(
@@ -209,6 +216,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=False,
             )
+            tile_pad = fallback(tile_pad, 16)
         case 7:
             model_name = "dn_grl_small_c3s25.ckpt"
             module = GRL(
@@ -226,6 +234,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=False,
             )
+            tile_pad = fallback(tile_pad, 16)
         case 8:
             model_name = "dn_grl_small_c3s50.ckpt"
             module = GRL(
@@ -243,6 +252,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=False,
             )
+            tile_pad = fallback(tile_pad, 16)
         case 9:
             model_name = "jpeg_grl_small_c3q10.ckpt"
             module = GRL(
@@ -260,6 +270,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=False,
             )
+            tile_pad = fallback(tile_pad, 36)
         case 10:
             model_name = "jpeg_grl_small_c3q20.ckpt"
             module = GRL(
@@ -277,6 +288,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=False,
             )
+            tile_pad = fallback(tile_pad, 36)
         case 11:
             model_name = "jpeg_grl_small_c3q30.ckpt"
             module = GRL(
@@ -294,6 +306,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=False,
             )
+            tile_pad = fallback(tile_pad, 36)
         case 12:
             model_name = "jpeg_grl_small_c3q40.ckpt"
             module = GRL(
@@ -311,6 +324,7 @@ def grlir(
                 anchor_window_down_factor=4,
                 local_connection=False,
             )
+            tile_pad = fallback(tile_pad, 36)
         case 13:
             model_name = "sr_grl_small_c3x2.ckpt"
             module = GRL(
@@ -329,6 +343,7 @@ def grlir(
                 local_connection=False,
             )
             scale = 2
+            tile_pad = fallback(tile_pad, 32)
         case 14:
             model_name = "sr_grl_small_c3x3.ckpt"
             module = GRL(
@@ -347,6 +362,7 @@ def grlir(
                 local_connection=False,
             )
             scale = 3
+            tile_pad = fallback(tile_pad, 32)
         case 15:
             model_name = "sr_grl_small_c3x4.ckpt"
             module = GRL(
@@ -365,6 +381,7 @@ def grlir(
                 local_connection=False,
             )
             scale = 4
+            tile_pad = fallback(tile_pad, 32)
 
     model_path = os.path.join(model_dir, model_name)
 
