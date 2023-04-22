@@ -22,6 +22,7 @@ def grlir(
     clip: vs.VideoNode,
     device_index: int | None = None,
     num_streams: int = 1,
+    model: int = 0,
     tile_w: int = 0,
     tile_h: int = 0,
     tile_pad: int = 16,
@@ -32,6 +33,23 @@ def grlir(
                             RGBH performs inference in FP16 mode while RGBS performs inference in FP32 mode.
     :param device_index:    Device ordinal of the GPU.
     :param num_streams:     Number of CUDA streams to enqueue the kernels.
+    :param model:           Model to use.
+                             0 = Blind Image SR
+                             1 = Defocus Deblurring
+                             2 = Motion Deblurring (GoPro)
+                             3 = Motion Deblurring (RealBlur-J)
+                             4 = Motion Deblurring (RealBlur-R)
+                             5 = Demosaicking
+                             6 = Denoising (sigma 15)
+                             7 = Denoising (sigma 25)
+                             8 = Denoising (sigma 50)
+                             9 = JPEG compression artifact removal (quality 10)
+                            10 = JPEG compression artifact removal (quality 20)
+                            11 = JPEG compression artifact removal (quality 30)
+                            12 = JPEG compression artifact removal (quality 40)
+                            13 = Classical Image SR (scale 2)
+                            14 = Classical Image SR (scale 3)
+                            15 = Classical Image SR (scale 4)
     :param tile_w:          Tile width. As too large images result in the out of GPU memory issue, so this tile option
                             will first crop input images into tiles, and then process each of them. Finally, they will
                             be merged into one image. 0 denotes for do not use tile.
@@ -53,6 +71,9 @@ def grlir(
     if num_streams > vs.core.num_threads:
         raise vs.Error("grlir: setting num_streams greater than `core.num_threads` is useless")
 
+    if model not in range(16):
+        raise vs.Error("grlir: model must be between 0 and 15 (inclusive)")
+
     if os.path.getsize(os.path.join(model_dir, "bsr_grl_base.ckpt")) == 0:
         raise vs.Error("grlir: model files have not been downloaded. run 'python -m vsgrlir' first")
 
@@ -65,29 +86,296 @@ def grlir(
     stream = [torch.cuda.Stream(device=device) for _ in range(num_streams)]
     stream_lock = [Lock() for _ in range(num_streams)]
 
-    module = GRL(
-        upscale=4,
-        embed_dim=180,
-        img_size=128,
-        upsampler="nearest+conv",
-        depths=[4, 4, 8, 8, 8, 4, 4],
-        num_heads_window=[3, 3, 3, 3, 3, 3, 3],
-        num_heads_stripe=[3, 3, 3, 3, 3, 3, 3],
-        window_size=16,
-        stripe_size=[32, 64],
-        stripe_shift=True,
-        mlp_ratio=2,
-        anchor_window_down_factor=4,
-        local_connection=True,
-    )
-    scale = 4
+    scale = 1
 
-    model_path = os.path.join(model_dir, "bsr_grl_base.ckpt")
+    match model:
+        case 0:
+            model_name = "bsr_grl_base.ckpt"
+            module = GRL(
+                img_size=128,
+                embed_dim=180,
+                upscale=4,
+                upsampler="nearest+conv",
+                depths=[4, 4, 8, 8, 8, 4, 4],
+                num_heads_window=[3, 3, 3, 3, 3, 3, 3],
+                num_heads_stripe=[3, 3, 3, 3, 3, 3, 3],
+                window_size=16,
+                stripe_size=[32, 64],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=True,
+            )
+            scale = 4
+        case 1:
+            model_name = "db_defocus_single_pixel_grl_base.ckpt"
+            module = GRL(
+                img_size=480,
+                embed_dim=180,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 8, 8, 8, 4, 4],
+                num_heads_window=[3, 3, 3, 3, 3, 3, 3],
+                num_heads_stripe=[3, 3, 3, 3, 3, 3, 3],
+                window_size=16,
+                stripe_size=[48, 96],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=True,
+            )
+        case 2:
+            model_name = "db_motion_grl_base_gopro.ckpt"
+            module = GRL(
+                img_size=480,
+                embed_dim=180,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 8, 8, 8, 4, 4],
+                num_heads_window=[3, 3, 3, 3, 3, 3, 3],
+                num_heads_stripe=[3, 3, 3, 3, 3, 3, 3],
+                window_size=12,
+                stripe_size=[48, 96],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=True,
+            )
+        case 3:
+            model_name = "db_motion_grl_base_realblur_j.ckpt"
+            module = GRL(
+                img_size=480,
+                embed_dim=180,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 8, 8, 8, 4, 4],
+                num_heads_window=[3, 3, 3, 3, 3, 3, 3],
+                num_heads_stripe=[3, 3, 3, 3, 3, 3, 3],
+                window_size=12,
+                stripe_size=[48, 96],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=True,
+            )
+        case 4:
+            model_name = "db_motion_grl_base_realblur_r.ckpt"
+            module = GRL(
+                img_size=480,
+                embed_dim=180,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 8, 8, 8, 4, 4],
+                num_heads_window=[3, 3, 3, 3, 3, 3, 3],
+                num_heads_stripe=[3, 3, 3, 3, 3, 3, 3],
+                window_size=12,
+                stripe_size=[48, 96],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=True,
+            )
+        case 5:
+            model_name = "dm_grl_small.ckpt"
+            module = GRL(
+                img_size=64,
+                embed_dim=128,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=8,
+                stripe_size=[32, 32],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+        case 6:
+            model_name = "dn_grl_small_c3s15.ckpt"
+            module = GRL(
+                img_size=256,
+                embed_dim=128,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=16,
+                stripe_size=[64, 128],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+        case 7:
+            model_name = "dn_grl_small_c3s25.ckpt"
+            module = GRL(
+                img_size=256,
+                embed_dim=128,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=16,
+                stripe_size=[64, 128],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+        case 8:
+            model_name = "dn_grl_small_c3s50.ckpt"
+            module = GRL(
+                img_size=256,
+                embed_dim=128,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=16,
+                stripe_size=[64, 128],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+        case 9:
+            model_name = "jpeg_grl_small_c3q10.ckpt"
+            module = GRL(
+                img_size=288,
+                embed_dim=128,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=36,
+                stripe_size=[72, 144],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+        case 10:
+            model_name = "jpeg_grl_small_c3q20.ckpt"
+            module = GRL(
+                img_size=288,
+                embed_dim=128,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=36,
+                stripe_size=[72, 144],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+        case 11:
+            model_name = "jpeg_grl_small_c3q30.ckpt"
+            module = GRL(
+                img_size=288,
+                embed_dim=128,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=36,
+                stripe_size=[72, 144],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+        case 12:
+            model_name = "jpeg_grl_small_c3q40.ckpt"
+            module = GRL(
+                img_size=288,
+                embed_dim=128,
+                upscale=1,
+                upsampler="",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=36,
+                stripe_size=[72, 144],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+        case 13:
+            model_name = "sr_grl_small_c3x2.ckpt"
+            module = GRL(
+                img_size=256,
+                embed_dim=128,
+                upscale=2,
+                upsampler="pixelshuffle",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=32,
+                stripe_size=[64, 64],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+            scale = 2
+        case 14:
+            model_name = "sr_grl_small_c3x3.ckpt"
+            module = GRL(
+                img_size=256,
+                embed_dim=128,
+                upscale=3,
+                upsampler="pixelshuffle",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=32,
+                stripe_size=[64, 64],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+            scale = 3
+        case 15:
+            model_name = "sr_grl_small_c3x4.ckpt"
+            module = GRL(
+                img_size=256,
+                embed_dim=128,
+                upscale=4,
+                upsampler="pixelshuffle",
+                depths=[4, 4, 4, 4],
+                num_heads_window=[2, 2, 2, 2],
+                num_heads_stripe=[2, 2, 2, 2],
+                window_size=32,
+                stripe_size=[64, 64],
+                stripe_shift=True,
+                mlp_ratio=2,
+                anchor_window_down_factor=4,
+                local_connection=False,
+            )
+            scale = 4
 
-    state_dict = torch.load(model_path, map_location="cpu")["state_dict"]
-    state_dict = {k.replace("model_g.", ""): v for k, v in state_dict.items() if "model_g." in k}
+    model_path = os.path.join(model_dir, model_name)
 
-    module.load_state_dict(state_dict)
+    state_dict = torch.load(model_path, map_location="cpu")
+    if "state_dict" in state_dict:
+        state_dict = state_dict["state_dict"]
+        state_dict = {k.replace("model_g.", ""): v for k, v in state_dict.items() if "model_g." in k}
+    else:
+        state_dict = {k.replace("model.", ""): v for k, v in state_dict.items() if "model." in k}
+
+    module.load_state_dict(state_dict, strict=False)
     module.eval().to(device, memory_format=torch.channels_last)
     if fp16:
         module.half()

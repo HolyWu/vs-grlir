@@ -1,8 +1,6 @@
 # GRL for Image Restoration
 Efficient and Explicit Modelling of Image Hierarchies for Image Restoration, based on https://github.com/ofsoundof/GRL-Image-Restoration.
 
-Only real-world image super-resolution model is kept.
-
 
 ## Dependencies
 - [NumPy](https://numpy.org/install)
