@@ -13,7 +13,7 @@ from vsutil import fallback
 
 from .grl import GRL
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 os.environ["CUDA_MODULE_LOADING"] = "LAZY"
 
