@@ -358,7 +358,7 @@ class GRL(nn.Module):
             }
         )
         for k, v in self.set_table_index_mask(self.input_resolution).items():
-            self.register_buffer(k, v)
+            self.register_buffer(k, v, persistent=False)
 
         self.layers = nn.ModuleList()
         for i in range(len(depths)):
