@@ -127,7 +127,8 @@ class TransformerStage(nn.Module):
         self.conv = build_last_conv(conv_type, dim)
 
     def _apply_half(self, fn):
-        self.blocks.half()
+        for blk in self.blocks:
+            blk.half()
 
         def compute_should_use_set_data(tensor, tensor_applied):
             if torch._has_compatible_shallow_copy_type(tensor, tensor_applied):

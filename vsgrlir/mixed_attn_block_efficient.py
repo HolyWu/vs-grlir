@@ -501,6 +501,70 @@ class EfficientMixAttnTransformerBlock(nn.Module):
         )
         self.norm2 = norm_layer(dim)
 
+    def _apply_half(self, fn):
+        self.attn.half()
+        self.norm1.half()
+
+        def compute_should_use_set_data(tensor, tensor_applied):
+            if torch._has_compatible_shallow_copy_type(tensor, tensor_applied):
+                # If the new tensor has compatible tensor type as the existing tensor,
+                # the current behavior is to change the tensor in-place using `.data =`,
+                # and the future behavior is to overwrite the existing tensor. However,
+                # changing the current behavior is a BC-breaking change, and we want it
+                # to happen in future releases. So for now we introduce the
+                # `torch.__future__.get_overwrite_module_params_on_conversion()`
+                # global flag to let the user control whether they want the future
+                # behavior of overwriting the existing tensor or not.
+                return not torch.__future__.get_overwrite_module_params_on_conversion()
+            else:
+                return False
+
+        for key, param in self._parameters.items():
+            if param is None:
+                continue
+            # Tensors stored in modules are graph leaves, and we don't want to
+            # track autograd history of `param_applied`, so we have to use
+            # `with torch.no_grad():`
+            with torch.no_grad():
+                param_applied = fn(param)
+            should_use_set_data = compute_should_use_set_data(param, param_applied)
+            if should_use_set_data:
+                param.data = param_applied
+                out_param = param
+            else:
+                assert isinstance(param, nn.Parameter)
+                assert param.is_leaf
+                out_param = nn.Parameter(param_applied, param.requires_grad)
+                self._parameters[key] = out_param
+
+            if param.grad is not None:
+                with torch.no_grad():
+                    grad_applied = fn(param.grad)
+                should_use_set_data = compute_should_use_set_data(param.grad, grad_applied)
+                if should_use_set_data:
+                    assert out_param.grad is not None
+                    out_param.grad.data = grad_applied
+                else:
+                    assert param.grad.is_leaf
+                    out_param.grad = grad_applied.requires_grad_(param.grad.requires_grad)
+
+        for key, buf in self._buffers.items():
+            if buf is not None:
+                self._buffers[key] = fn(buf)
+
+        return self
+
+    def half(self):
+        r"""Casts all floating point parameters and buffers to ``half`` datatype.
+
+        .. note::
+            This method modifies the module in-place.
+
+        Returns:
+            Module: self
+        """
+        return self._apply_half(lambda t: t.half() if t.is_floating_point() else t)
+
     def _get_table_index_mask(self, all_table_index_mask):
         table_index_mask = {
             "table_w": all_table_index_mask["table_w"],
@@ -537,15 +601,15 @@ class EfficientMixAttnTransformerBlock(nn.Module):
             x = (
                 x
                 + self.res_scale
-                * self.drop_path(self.norm1(self.attn(x.half() if self.fp16 else x, x_size, table_index_mask)))
-                + self.conv(x.half() if self.fp16 else x, x_size)
+                * self.drop_path(self.norm1(self.attn(x.half() if self.fp16 else x, x_size, table_index_mask)).float())
+                + self.conv(x, x_size)
             )
         else:
             x = x + self.res_scale * self.drop_path(
-                self.norm1(self.attn(x.half() if self.fp16 else x, x_size, table_index_mask))
+                self.norm1(self.attn(x.half() if self.fp16 else x, x_size, table_index_mask)).float()
             )
         # FFN
-        x = x + self.res_scale * self.drop_path(self.norm2(self.mlp(x.half() if self.fp16 else x)))
+        x = x + self.res_scale * self.drop_path(self.norm2(self.mlp(x)))
 
         return x
 
